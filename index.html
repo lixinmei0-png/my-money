@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<link rel="manifest" href="manifest.json">
+<title>My Money</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6f8;color:#111827;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.app{max-width:560px;margin:auto;min-height:100vh;padding:env(safe-area-inset-top) 16px 90px}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0}
+h1{font-size:25px;margin:0}.month{color:#6b7280;font-size:14px;margin-top:4px}
+button{border:0;border-radius:14px;padding:12px 16px;font-size:15px;font-weight:600}
+.primary{background:#111827;color:white}.secondary{background:#e5e7eb;color:#111827}
+.card{background:white;border-radius:20px;padding:18px;margin:12px 0;box-shadow:0 2px 10px #0000000a}
+.balance{font-size:34px;font-weight:800;margin:5px 0 18px}.muted{color:#6b7280}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px}.stat{padding:12px;border-radius:15px;background:#f3f4f6}.stat b{display:block;font-size:19px;margin-top:4px}
+.progress{height:10px;background:#e5e7eb;border-radius:99px;overflow:hidden}.bar{height:100%;background:#111827;border-radius:99px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #eee}.row:last-child{border:0}
+.amount.income{color:#16803c}.amount.expense{color:#b42318}.tag{font-size:12px;color:#6b7280}
+.fab{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);width:calc(min(528px,100vw - 32px));z-index:5}
+.sheet{position:fixed;inset:0;background:#0006;display:none;align-items:flex-end;z-index:10}.sheet.show{display:flex}
+.panel{background:white;width:100%;max-width:560px;margin:auto;border-radius:25px 25px 0 0;padding:22px 18px calc(24px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+label{font-size:13px;color:#6b7280;display:block;margin:12px 0 6px}input,select{width:100%;padding:14px;border:1px solid #d1d5db;border-radius:12px;font-size:16px;background:white}
+.type{display:grid;grid-template-columns:1fr 1fr;gap:8px}.type button.active{background:#111827;color:white}
+.actions{display:flex;gap:8px;margin-top:18px}.actions button{flex:1}
+.danger{color:#b42318;background:#fee2e2}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div><h1>My Money</h1><div class="month" id="month"></div></div><button class="secondary" onclick="openBudget()">Budget</button></header>
+<div class="card"><div class="muted">Balance</div><div class="balance" id="balance">$0.00</div>
+<div class="stats"><div class="stat"><span class="muted">Income</span><b id="income">$0.00</b></div><div class="stat"><span class="muted">Expenses</span><b id="expense">$0.00</b></div></div></div>
+<div class="card"><div style="display:flex;justify-content:space-between"><b>Monthly Budget</b><span id="budgetText">$0</span></div>
+<div class="progress" style="margin-top:10px"><div class="bar" id="bar"></div></div><div class="muted" style="margin-top:8px" id="budgetStatus"></div></div>
+<div class="card"><b>Expenses by Category</b><div id="categories"></div></div>
+<div class="card"><div style="display:flex;justify-content:space-between"><b>Recent Transactions</b><button class="secondary" onclick="openList()">View all</button></div><div id="recent"></div></div>
+</div>
+<div class="fab"><button class="primary" style="width:100%;font-size:17px" onclick="openAdd()">＋ Add Transaction</button></div>
+
+<div class="sheet" id="addSheet" onclick="closeIf(event,'addSheet')"><div class="panel"><h2>Add Transaction</h2>
+<div class="type"><button id="expenseType" class="active" onclick="setType('expense')">Expense</button><button id="incomeType" onclick="setType('income')">Income</button></div>
+<label id="merchantLabel">Merchant / Store</label><input id="merchant" placeholder="e.g. Costco">
+<label>Amount</label><input id="amount" type="number" step="0.01" inputmode="decimal" placeholder="0.00">
+<label>Category</label><select id="category"></select><label>Date</label><input id="date" type="date"><label>Note</label><input id="note" placeholder="Optional">
+<div class="actions"><button class="secondary" onclick="closeSheet('addSheet')">Cancel</button><button class="primary" onclick="saveTransaction()">Save</button></div>
+</div></div>
+
+<div class="sheet" id="budgetSheet" onclick="closeIf(event,'budgetSheet')"><div class="panel"><h2>Monthly Budget</h2>
+<label>Budget Amount</label><input id="budgetInput" type="number" step="0.01" inputmode="decimal">
+<div class="actions"><button class="secondary" onclick="closeSheet('budgetSheet')">Cancel</button><button class="primary" onclick="saveBudget()">Save</button></div></div></div>
+
+<div class="sheet" id="listSheet" onclick="closeIf(event,'listSheet')"><div class="panel"><h2>Transactions</h2><div id="allTransactions"></div>
+<button class="secondary" style="width:100%;margin-top:14px" onclick="closeSheet('listSheet')">Close</button></div></div>
+
+<script>
+const expenseCats=["Food","Grocery","Shopping","Transportation","Bills","Entertainment","Travel","Subscription","Other"];
+const incomeCats=["Salary","Bonus","Refund","Interest","Gift","Other"];
+let data=JSON.parse(localStorage.getItem("moneyData")||'{"transactions":[],"budget":3000}');
+let type="expense";
+const money=n=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n||0);
+const save=()=>localStorage.setItem("moneyData",JSON.stringify(data));
+function current(){let now=new Date();return data.transactions.filter(t=>{let d=new Date(t.date+"T12:00:00");return d.getMonth()==now.getMonth()&&d.getFullYear()==now.getFullYear()})}
+function render(){document.getElementById("month").textContent=new Date().toLocaleDateString("en-US",{month:"long",year:"numeric"});
+let tx=current(),inc=tx.filter(t=>t.type==="income").reduce((a,t)=>a+t.amount,0),exp=tx.filter(t=>t.type==="expense").reduce((a,t)=>a+t.amount,0);
+document.getElementById("income").textContent=money(inc);document.getElementById("expense").textContent=money(exp);document.getElementById("balance").textContent=money(inc-exp);
+document.getElementById("budgetText").textContent=money(data.budget);document.getElementById("bar").style.width=(data.budget?Math.min(exp/data.budget,1)*100:0)+"%";
+document.getElementById("budgetStatus").textContent=exp>data.budget?"⚠️ Budget exceeded by "+money(exp-data.budget):money(data.budget-exp)+" remaining";
+let totals={};tx.filter(t=>t.type==="expense").forEach(t=>totals[t.category]=(totals[t.category]||0)+t.amount);
+document.getElementById("categories").innerHTML=Object.entries(totals).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="row"><span>${c}</span><b>${money(v)}</b></div>`).join("")||'<p class="muted">No expenses this month.</p>';
+document.getElementById("recent").innerHTML=data.transactions.slice(0,8).map(row).join("")||'<p class="muted">No transactions yet.</p>'}
+function row(t){return `<div class="row"><div><b>${esc(t.merchant)}</b><div class="tag">${esc(t.category)} · ${t.date}</div></div><b class="amount ${t.type}">${t.type==="income"?"+":"-"}${money(t.amount)}</b></div>`}
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+function openAdd(){date.value=new Date().toISOString().slice(0,10);merchant.value="";amount.value="";note.value="";setType("expense");addSheet.classList.add("show")}
+function setType(x){type=x;expenseType.classList.toggle("active",x==="expense");incomeType.classList.toggle("active",x==="income");merchantLabel.textContent=x==="income"?"Source":"Merchant / Store";category.innerHTML=(x==="income"?incomeCats:expenseCats).map(c=>`<option>${c}</option>`).join("")}
+function saveTransaction(){let m=merchant.value.trim(),a=Number(amount.value),d=date.value||new Date().toISOString().slice(0,10);if(!m||!a||a<=0){alert("Please enter a name and amount.");return}data.transactions.unshift({id:crypto.randomUUID(),merchant:m,amount:a,type,category:category.value,date:d,note:note.value});save();closeSheet("addSheet");render();if(type==="expense"&&current().filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0)>data.budget)alert("⚠️ Your monthly budget has been exceeded.")}
+function openBudget(){budgetInput.value=data.budget;budgetSheet.classList.add("show")}
+function saveBudget(){let v=Number(budgetInput.value);if(v>=0){data.budget=v;save();closeSheet("budgetSheet");render()}}
+function openList(){allTransactions.innerHTML=data.transactions.map(t=>row(t)+`<button class="danger" onclick="removeTx('${t.id}')">Delete</button>`).join("")||'<p class="muted">No transactions.</p>';listSheet.classList.add("show")}
+function removeTx(id){data.transactions=data.transactions.filter(t=>t.id!==id);save();render();openList()}
+function closeSheet(id){document.getElementById(id).classList.remove("show")}
+function closeIf(e,id){if(e.target.id===id)closeSheet(id)}
+render();if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js");
+</script></body></html>
